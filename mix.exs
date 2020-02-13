@@ -9,6 +9,14 @@ defmodule Profiler.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
 
+      # Hex
+      description:
+        "Profiler is a sampling profiler library for live performance analysis.",
+      package: [
+        licenses: ["Apache 2.0"],
+        maintainers: ["Dominic Letz"],
+        links: %{"GitHub" => "https://github.com/dominicletz/profiler"}
+      ],
       # Docs
       name: "Profiler",
       source_url: "https://github.com/dominicletz/profiler",
