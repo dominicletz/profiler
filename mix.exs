@@ -4,14 +4,13 @@ defmodule Profiler.MixProject do
   def project do
     [
       app: :profiler,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.10",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
 
       # Hex
-      description:
-        "Profiler is a sampling profiler library for live performance analysis.",
+      description: "Profiler is a sampling profiler library for live performance analysis.",
       package: [
         licenses: ["Apache 2.0"],
         maintainers: ["Dominic Letz"],

@@ -21,6 +21,8 @@ defmodule Profiler do
   ```
   """
 
+  @type task :: String.t() | atom() | pid() | fun()
+
   @doc """
     Times the given function and prints the result.
     Example usage:
@@ -59,8 +61,8 @@ defmodule Profiler do
     :ok
     ```
   """
-  @spec processes(:infinity | non_neg_integer) :: :ok
-  def processes(timeout \\ 5000) do
+  @spec processes(non_neg_integer()) :: :ok
+  def processes(timeout \\ 5_000) do
     pids = :erlang.processes()
     info1 = Enum.map(pids, &:erlang.process_info/1)
     Process.sleep(timeout)
@@ -105,13 +107,25 @@ defmodule Profiler do
 
     The first number shows the total number of samples that have been recorded
     per function call.
+
+    For pid there are five different input formats allowed:
+
+    1. fun() which will then be spwaned called in a loop and killed after the test
+    2. Native pid()
+    3. An atom that is resolved using whereis(name)
+    4. A string of the format "<a.b.c>" or "0.b.c" or just "b" in which
+       case the pid is interpreted as "<0.b.0>"
+    5. An integer, in which case the pid is interpreted as "<0.\#{int}.0>"
+
     ```
     iex(2)> Profiler.profile_simple 197
     {10000, {Profiler, :"-profile_simple/2-fun-0-", 3}}
     ```
   """
-  @spec profile_simple(any, integer) :: :ok
-  def profile_simple(pid, n \\ 10000) do
+  @spec profile_simple(task(), non_neg_integer()) :: :ok
+  def profile_simple(pid, n \\ 10000)
+
+  def profile_simple(pid, n) when is_pid(pid) do
     pid = to_pid(pid)
 
     samples =
@@ -131,19 +145,24 @@ defmodule Profiler do
     :ok
   end
 
+  def profile_simple(pid, msecs) do
+    with_pid(pid, fn pid -> profile_simple(pid, msecs) end)
+  end
+
   @doc """
     This runs the sampling profiler for the given amount of milliseconds or
     10 seconds by default. The sampling profiler will collect stack traces
     of the given process pid or process name and print the collected samples
     based on frequency.
 
-    For pid there are three different input formats allowed:
+    For pid there are five different input formats allowed:
 
-    1. Native pid()
-    2. An atom that is resolved using whereis(name)
-    3. A string of the format "<a.b.c>" or "0.b.c" or just "b" in which
+    1. fun() which will then be spwaned called in a loop and killed after the test
+    2. Native pid()
+    3. An atom that is resolved using whereis(name)
+    4. A string of the format "<a.b.c>" or "0.b.c" or just "b" in which
        case the pid is interpreted as "<0.b.0>"
-    4  An integer, in which case the pid is interpreted as "<0.\#{int}.0>"
+    5. An integer, in which case the pid is interpreted as "<0.\#{int}.0>"
 
     In this example the profiler is used to profile itself. The first percentage
     number shows how many samples were found in the given function call.
@@ -166,32 +185,177 @@ defmodule Profiler do
 
 
   """
-  @spec profile(String.t() | atom() | pid(), integer()) :: :ok
-  def profile(pid, n \\ 10000) do
-    pid = to_pid(pid)
+  @spec profile(task(), non_neg_integer()) :: :ok
+  def profile(pid, n \\ 10_000) do
     :erlang.system_flag(:backtrace_depth, 30)
 
-    samples =
+    with_pid(pid, fn pid ->
       for _ <- 1..n do
         {:current_stacktrace, what} = :erlang.process_info(pid, :current_stacktrace)
         Process.sleep(1)
         {Time.utc_now(), what}
       end
+    end)
+    |> Enum.reduce(%{}, fn {_time, what}, map ->
+      Map.update(map, what, 1, fn n -> n + 1 end)
+    end)
+    |> Enum.map(fn {k, v} -> {v, Enum.reverse(k)} end)
+    |> Enum.sort()
+    |> Enum.reduce(%{}, &update/2)
+    |> Enum.sort_by(fn {_key, {count, _subtree}} -> count end)
+    |> print()
 
-    ret =
-      Enum.reduce(samples, %{}, fn {_time, what}, map ->
-        Map.update(map, what, 1, fn n -> n + 1 end)
-      end)
-
-    ret2 = Enum.map(ret, fn {k, v} -> {v, Enum.reverse(k)} end) |> Enum.sort()
-
-    tree =
-      Enum.reduce(ret2, %{}, &update/2)
-      |> Enum.sort_by(fn {_key, {count, _subtree}} -> count end)
-
-    print(tree)
-    # ret2
     :ok
+  end
+
+  @doc """
+    This runs fprof the given amount of milliseconds or 5 seconds by default.
+
+    When the run completes the code tries to open kcachegrind to show the resultung
+    kcachegrind file. Ensure to have kcachegrind installed. If kcachgrind is not found
+    the function will just return the name of the generated report file. It
+    can then be copied to another lcoation for analysis
+
+    For pid there are five different input formats allowed:
+
+    1. fun() which will then be spwaned called in a loop and killed after the test
+    2. Native pid()
+    3. An atom that is resolved using whereis(name)
+    4. A string of the format "<a.b.c>" or "0.b.c" or just "b" in which
+       case the pid is interpreted as "<0.b.0>"
+    5. An integer, in which case the pid is interpreted as "<0.\#{int}.0>"
+
+    In this example the profiler is used to profile itself. The first percentage
+    number shows how many samples were found in the given function call.
+    Indention indicates the call stack:
+    ```
+    iex(1)> Profiler.fprof(fn -> Profiler.demo_fib(30) end)
+    ```
+
+
+  """
+  @spec fprof(task(), non_neg_integer()) :: binary()
+  def fprof(pid, msecs \\ 5_000) do
+    prefix = "profile_#{:rand.uniform(999_999_999)}"
+
+    # pid =
+    with_pid(pid, fn pid ->
+      :fprof.trace([:start, {:procs, pid}, {:cpu_time, false}])
+      Process.sleep(msecs)
+      :fprof.trace(:stop)
+      :fprof.profile()
+      :fprof.analyse({:dest, String.to_charlist(prefix <> ".fprof")})
+    end)
+
+    # name =
+    #   Kernel.inspect(pid)
+    #   |> String.replace("#", "")
+    #   |> String.replace(">", "")
+    #   |> String.replace("<", "")
+
+    # prefix = "profile_#{name}"
+
+    # convert(prefix, %Profiler)
+    convert(prefix)
+  end
+
+  @doc """
+    Demo function for the documentation.
+    Never implement fibonacci like this. Never
+  """
+  @spec demo_fib(integer()) :: pos_integer
+  def demo_fib(n) do
+    if n < 2 do
+      1
+    else
+      demo_fib(n - 1) + demo_fib(n - 2)
+    end
+  end
+
+  # ===========================                    ===========================
+  # =========================== INTERNAL FUNCTIONS ===========================
+  # ===========================                    ===========================
+
+  def convert(prefix) do
+    destination = prefix <> ".cprof"
+    {:ok, file} = :file.open(String.to_charlist(destination), [:write])
+    {:ok, terms} = :file.consult(String.to_charlist(prefix <> ".fprof"))
+    :io.format(file, "events: Time~n", [])
+    process_terms(file, terms, [])
+
+    case System.find_executable("kcachegrind") do
+      nil -> IO.puts("Run kcachegrind #{destination}")
+      bin -> spawn(fn -> System.cmd(bin, [destination], stderr_to_stdout: true) end)
+    end
+
+    destination
+  end
+
+  defstruct [:pid, :in_file, :in_file_format, :out_file]
+
+  defp process_terms(file, [], _opts) do
+    :file.close(file)
+  end
+
+  defp process_terms(file, [{:analysis_options, _opt} | rest], opts) do
+    process_terms(file, rest, opts)
+  end
+
+  defp process_terms(file, [[{:totals, _count, acc, _own}] | rest], opts) do
+    :io.format(file, "summary: ~w~n", [:erlang.trunc(acc * 1000)])
+    process_terms(file, rest, opts)
+  end
+
+  defp process_terms(file, [[{pid, _count, _acc, _own} | _T] | rest], opts = %Profiler{pid: true})
+       when is_list(pid) do
+    :io.format(file, "ob=~s~n", [pid])
+    process_terms(file, rest, opts)
+  end
+
+  defp process_terms(file, [list | rest], opts) when is_list(list) do
+    process_terms(file, rest, opts)
+  end
+
+  defp process_terms(file, [entry | rest], opts) do
+    process_entry(file, entry)
+    process_terms(file, rest, opts)
+  end
+
+  defp process_entry(file, {_calling_list, actual, called_list}) do
+    process_actual(file, actual)
+    process_called_list(file, called_list)
+  end
+
+  defp process_actual(file, {func, _count, _acc, own}) do
+    file_name = get_file(func)
+    :io.format(file, "fl=~w~n", [file_name])
+    :io.format(file, "fn=~w~n", [func])
+    :io.format(file, "1 ~w~n", [trunc(own * 1000)])
+  end
+
+  defp process_called_list(_, []) do
+    :ok
+  end
+
+  defp process_called_list(file, [called | rest]) do
+    process_called(file, called)
+    process_called_list(file, rest)
+  end
+
+  defp process_called(file, {func, count, acc, _own}) do
+    file_name = get_file(func)
+    :io.format(file, "cfl=~w~n", [file_name])
+    :io.format(file, "cfn=~w~n", [func])
+    :io.format(file, "calls=~w 1~n", [count])
+    :io.format(file, "1 ~w~n", [trunc(acc * 1000)])
+  end
+
+  defp get_file({mod, _func, _arity}) do
+    mod
+  end
+
+  defp get_file(_func) do
+    :pseudo
   end
 
   defp print(tree) do
@@ -248,5 +412,22 @@ defmodule Profiler do
 
   defp to_pid(pid) do
     pid
+  end
+
+  defp with_pid(pid, fun) when is_function(pid) do
+    pid = spawn_link(fn -> looper(pid) end)
+    fun.(pid)
+    Process.unlink(pid)
+    Process.exit(pid, :kill)
+    pid
+  end
+
+  defp with_pid(pid, fun) do
+    fun.(to_pid(pid))
+  end
+
+  defp looper(fun) do
+    fun.()
+    looper(fun)
   end
 end
