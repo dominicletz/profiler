@@ -36,11 +36,11 @@ iex(2)> Profiler.profile(Chain.Worker)
 
 Also the profiler has tooling to profile using the erlang native `fprof` module and will call the external [kcachegrind](https://kcachegrind.github.io/html/Home.html) tool when available for visualization:
 
-![kcachegrind preview](https://raw.githubusercontent.com/dominicletz/profiler/master/images/kcachegrind.png)
-
 ```
 iex(6)> Profiler.fprof(fn -> ExSha3Tiny.sha3_256(str) end)
 ```
+
+![kcachegrind preview](https://raw.githubusercontent.com/dominicletz/profiler/master/images/kcachegrind.png)
 
 ## Installation
 
