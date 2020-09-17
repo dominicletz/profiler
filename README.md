@@ -6,7 +6,7 @@ Please checkout the full documentation at: https://hexdocs.pm/profiler/Profiler.
 
 Example output for profiling the [Diode Blockchain Server](https://github.com/diodechain/diode_server_ex):
 ```
-iex(diode@seed-beta)2> Profiler.profile(Chain.Worker)
+iex(2)> Profiler.profile(Chain.Worker)
  100% {:proc_lib, :init_p_do_apply, 3, [file: 'proc_lib.erl', line: 249]}
     100% {:gen_server, :handle_msg, 6, [file: 'gen_server.erl', line: 711]}
        100% {:gen_server, :try_dispatch, 4, [file: 'gen_server.erl', line: 637]}
@@ -32,6 +32,16 @@ iex(diode@seed-beta)2> Profiler.profile(Chain.Worker)
 :ok
 ```
 
+# fprof Sugar
+
+Also the profiler has tooling to profile using the erlang native `fprof` module and will call the external [kcachegrind](https://kcachegrind.github.io/html/Home.html) tool when available for visualization:
+
+![kcachegrind preview](https://raw.githubusercontent.com/dominicletz/profiler/master/images/kcachegrind.png)
+
+```
+iex(6)> Profiler.fprof(fn -> ExSha3Tiny.sha3_256(str) end)
+```
+
 ## Installation
 
 The profiler can be installed by adding `profiler` to your list of dependencies in `mix.exs`:
@@ -39,7 +49,7 @@ The profiler can be installed by adding `profiler` to your list of dependencies 
 ```elixir
 def deps do
   [
-    {:profiler, "~> 0.1.0"}
+    {:profiler, "~> 0.2"}
   ]
 end
 ```

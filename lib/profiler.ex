@@ -238,7 +238,6 @@ defmodule Profiler do
   def fprof(pid, msecs \\ 5_000) do
     prefix = "profile_#{:rand.uniform(999_999_999)}"
 
-    # pid =
     with_pid(pid, fn pid ->
       :fprof.trace([:start, {:procs, pid}, {:cpu_time, false}])
       Process.sleep(msecs)
@@ -246,14 +245,6 @@ defmodule Profiler do
       :fprof.profile()
       :fprof.analyse({:dest, String.to_charlist(prefix <> ".fprof")})
     end)
-
-    # name =
-    #   Kernel.inspect(pid)
-    #   |> String.replace("#", "")
-    #   |> String.replace(">", "")
-    #   |> String.replace("<", "")
-
-    # prefix = "profile_#{name}"
 
     # convert(prefix, %Profiler)
     convert(prefix)
@@ -416,10 +407,10 @@ defmodule Profiler do
 
   defp with_pid(pid, fun) when is_function(pid) do
     pid = spawn_link(fn -> looper(pid) end)
-    fun.(pid)
+    ret = fun.(pid)
     Process.unlink(pid)
     Process.exit(pid, :kill)
-    pid
+    ret
   end
 
   defp with_pid(pid, fun) do
