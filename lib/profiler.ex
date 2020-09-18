@@ -274,9 +274,13 @@ defmodule Profiler do
     :io.format(file, "events: Time~n", [])
     process_terms(file, terms, [])
 
-    case System.find_executable("kcachegrind") do
-      nil -> IO.puts("Run kcachegrind #{destination}")
-      bin -> spawn(fn -> System.cmd(bin, [destination], stderr_to_stdout: true) end)
+    (System.find_executable("kcachegrind") || System.find_executable("qcachegrind"))
+    |> case do
+      nil ->
+        IO.puts("Run kcachegrind #{destination}")
+
+      bin ->
+        spawn(fn -> System.cmd(bin, [destination], stderr_to_stdout: true) end)
     end
 
     destination

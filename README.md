@@ -34,7 +34,11 @@ iex(2)> Profiler.profile(Chain.Worker)
 
 # fprof Sugar
 
-Also the profiler has tooling to profile using the erlang native `fprof` module and will call the external [kcachegrind](https://kcachegrind.github.io/html/Home.html) tool when available for visualization:
+Also the profiler has tooling to profile using the erlang native `fprof` module and will call the external [kcachegrind](https://kcachegrind.github.io/html/Home.html) tool when available for visualization.
+
+MacOS: `brew install qcachegrind`
+Ubuntu: `sudo apt install kcachegrind`
+Windows: https://sourceforge.net/projects/qcachegrindwin/files/latest/download
 
 ```
 iex(6)> Profiler.fprof(fn -> ExSha3Tiny.sha3_256(str) end)
