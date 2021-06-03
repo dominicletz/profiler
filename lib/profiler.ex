@@ -187,11 +187,9 @@ defmodule Profiler do
   """
   @spec profile(task(), non_neg_integer()) :: :ok
   def profile(pid, n \\ 10_000) do
-    :erlang.system_flag(:backtrace_depth, 30)
-
     with_pid(pid, fn pid ->
       for _ <- 1..n do
-        {:current_stacktrace, what} = :erlang.process_info(pid, :current_stacktrace)
+        what = stacktrace(pid)
         Process.sleep(1)
         {Time.utc_now(), what}
       end
@@ -248,6 +246,17 @@ defmodule Profiler do
 
     # convert(prefix, %Profiler)
     convert(prefix)
+  end
+
+  @doc """
+    Returns current stacktrace for the given pid and allows setting the erlang
+    internal stacktrace depth.
+  """
+  def stacktrace(pid \\ nil, depth \\ 30) do
+    :erlang.system_flag(:backtrace_depth, depth)
+    pid = pid || self()
+    {:current_stacktrace, what} = :erlang.process_info(pid, :current_stacktrace)
+    what
   end
 
   @doc """
