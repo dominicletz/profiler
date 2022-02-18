@@ -248,6 +248,56 @@ defmodule Profiler do
     convert(prefix)
   end
 
+  @spec trace_all_calls(task(), non_neg_integer()) :: binary()
+  def trace_all_calls(pid, msecs \\ 5_000) do
+    spawn_with_pid(pid, fn pid ->
+      Process.monitor(pid)
+      :fprof.trace([:start, {:procs, pid}, {:cpu_time, false}, {:tracer, self()}])
+      if is_integer(msecs), do: Process.send_after(self(), {:stop, pid}, msecs)
+      calltracer(pid)
+    end)
+  end
+
+  defp calltracer(pid) do
+    receive do
+      {:DOWN, _ref, :process, ^pid, _reason} ->
+        :fprof.trace(:stop)
+
+      {:stop, ^pid} ->
+        :fprof.trace(:stop)
+
+      {:trace_ts, ^pid, :call, func, _cp, _timing} ->
+        IO.puts("#{inspect(pid)}: #{inspect(func)}")
+        calltracer(pid)
+
+      _other ->
+        calltracer(pid)
+    end
+  end
+
+  @spec trace_poll_stacktrace(task(), non_neg_integer()) :: binary()
+  def trace_poll_stacktrace(pid, msecs \\ 5_000) do
+    spawn_with_pid(pid, fn pid ->
+      Process.monitor(pid)
+      if is_integer(msecs), do: Process.send_after(self(), {:stop, pid}, msecs)
+      polltracer(pid)
+    end)
+  end
+
+  defp polltracer(pid) do
+    receive do
+      {:DOWN, _ref, :process, ^pid, _reason} -> :ok
+      {:stop, ^pid} -> :ok
+      _other -> polltracer(pid)
+    after
+      500 ->
+        {:current_stacktrace, what} = :erlang.process_info(pid, :current_stacktrace)
+        what = Enum.take(what, 3)
+        IO.puts("#{inspect(pid)}: #{inspect(what)}")
+        polltracer(pid)
+    end
+  end
+
   @doc """
     Returns current stacktrace for the given pid and allows setting the erlang
     internal stacktrace depth.
@@ -416,6 +466,10 @@ defmodule Profiler do
 
   defp to_pid(pid) do
     pid
+  end
+
+  defp spawn_with_pid(pid, fun) do
+    spawn(fn -> with_pid(pid, fun) end)
   end
 
   defp with_pid(pid, fun) when is_function(pid) do
