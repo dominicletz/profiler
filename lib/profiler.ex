@@ -146,7 +146,7 @@ defmodule Profiler do
   end
 
   def profile_simple(pid, msecs) do
-    with_pid(pid, fn pid -> profile_simple(pid, msecs) end)
+    with_pid(pid, fn pid -> profile_simple(pid, msecs) end, msecs)
   end
 
   @doc """
@@ -187,13 +187,17 @@ defmodule Profiler do
   """
   @spec profile(task(), non_neg_integer()) :: :ok
   def profile(pid, n \\ 10_000) do
-    with_pid(pid, fn pid ->
-      for _ <- 1..n do
-        what = stacktrace(pid)
-        Process.sleep(1)
-        {Time.utc_now(), what}
-      end
-    end)
+    with_pid(
+      pid,
+      fn pid ->
+        for _ <- 1..n do
+          what = stacktrace(pid)
+          Process.sleep(1)
+          {Time.utc_now(), what}
+        end
+      end,
+      15_000
+    )
     |> Enum.reduce(%{}, fn {_time, what}, map ->
       Map.update(map, what, 1, fn n -> n + 1 end)
     end)
@@ -236,13 +240,17 @@ defmodule Profiler do
   def fprof(pid, msecs \\ 5_000) do
     prefix = "profile_#{:rand.uniform(999_999_999)}"
 
-    with_pid(pid, fn pid ->
-      :fprof.trace([:start, {:procs, pid}, {:cpu_time, false}])
-      Process.sleep(msecs)
-      :fprof.trace(:stop)
-      :fprof.profile()
-      :fprof.analyse({:dest, String.to_charlist(prefix <> ".fprof")})
-    end)
+    with_pid(
+      pid,
+      fn pid ->
+        :fprof.trace([:start, {:procs, pid}, {:cpu_time, false}])
+        Process.sleep(msecs)
+        :fprof.trace(:stop)
+        :fprof.profile()
+        :fprof.analyse({:dest, String.to_charlist(prefix <> ".fprof")})
+      end,
+      msecs
+    )
 
     # convert(prefix, %Profiler)
     convert(prefix)
@@ -250,12 +258,16 @@ defmodule Profiler do
 
   @spec trace_all_calls(task(), non_neg_integer()) :: binary()
   def trace_all_calls(pid, msecs \\ 5_000) do
-    spawn_with_pid(pid, fn pid ->
-      Process.monitor(pid)
-      :fprof.trace([:start, {:procs, pid}, {:cpu_time, false}, {:tracer, self()}])
-      if is_integer(msecs), do: Process.send_after(self(), {:stop, pid}, msecs)
-      calltracer(pid)
-    end)
+    spawn_with_pid(
+      pid,
+      fn pid ->
+        Process.monitor(pid)
+        :fprof.trace([:start, {:procs, pid}, {:cpu_time, false}, {:tracer, self()}])
+        if is_integer(msecs), do: Process.send_after(self(), {:stop, pid}, msecs)
+        calltracer(pid)
+      end,
+      msecs
+    )
   end
 
   defp calltracer(pid) do
@@ -277,11 +289,15 @@ defmodule Profiler do
 
   @spec trace_poll_stacktrace(task(), non_neg_integer()) :: binary()
   def trace_poll_stacktrace(pid, msecs \\ 5_000) do
-    spawn_with_pid(pid, fn pid ->
-      Process.monitor(pid)
-      if is_integer(msecs), do: Process.send_after(self(), {:stop, pid}, msecs)
-      polltracer(pid)
-    end)
+    spawn_with_pid(
+      pid,
+      fn pid ->
+        Process.monitor(pid)
+        if is_integer(msecs), do: Process.send_after(self(), {:stop, pid}, msecs)
+        polltracer(pid)
+      end,
+      msecs
+    )
   end
 
   defp polltracer(pid) do
@@ -468,24 +484,27 @@ defmodule Profiler do
     pid
   end
 
-  defp spawn_with_pid(pid, fun) do
-    spawn(fn -> with_pid(pid, fun) end)
+  defp spawn_with_pid(pid, fun, msecs) do
+    spawn(fn -> with_pid(pid, fun, msecs) end)
   end
 
-  defp with_pid(pid, fun) when is_function(pid) do
-    pid = spawn_link(fn -> looper(pid) end)
+  defp with_pid(pid, fun, msecs) when is_function(pid) do
+    pid = spawn_link(fn -> looper(pid, msecs) end)
     ret = fun.(pid)
     Process.unlink(pid)
     Process.exit(pid, :kill)
     ret
   end
 
-  defp with_pid(pid, fun) do
+  defp with_pid(pid, fun, _) do
     fun.(to_pid(pid))
   end
 
-  defp looper(fun) do
-    fun.()
-    looper(fun)
+  defp looper(fun, msecs) do
+    if msecs > 0 do
+      time = elem(:timer.tc(fn -> fun.() end), 0)
+      IO.puts("loop time: #{time}")
+      looper(fun, msecs - div(time, 1000))
+    end
   end
 end
