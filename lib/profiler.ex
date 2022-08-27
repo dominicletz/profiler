@@ -1,5 +1,13 @@
 defmodule Profiler do
   @moduledoc """
+  This package contains a couple of profiling shell scripts to aid
+  live-system investigation. Among them:
+
+
+  1) Easy performance visualization using kcachegrind
+  2) Shell information using a sampling provider
+  3) Memory information
+
   This sampling profiler is intendend for shell and remote shell usage.
   Most commands here print their results to the screen for human inspection.
 
@@ -254,6 +262,75 @@ defmodule Profiler do
 
     # convert(prefix, %Profiler)
     convert(prefix)
+  end
+
+  def memory_usage() do
+    percent = fn
+      _a, 0 -> "100%"
+      a, b -> "#{round(100 * a / b)}%"
+    end
+
+    get = fn
+      nil, _key ->
+        0
+
+      info, key ->
+        elem(List.keyfind(info, key, 0, {0, 0}), 1)
+    end
+
+    get_alloc = fn
+      nil ->
+        0
+
+      list ->
+        elem(hd(list), 2)
+    end
+
+    allocators = [
+      :binary_alloc,
+      :driver_alloc,
+      :eheap_alloc,
+      :ets_alloc,
+      :exec_alloc,
+      :fix_alloc,
+      :literal_alloc,
+      :ll_alloc,
+      :mseg_alloc,
+      :sl_alloc,
+      :std_alloc,
+      :sys_alloc,
+      :temp_alloc
+    ]
+
+    # ~ special = :erts_mmap
+
+    Enum.each(allocators, fn alloc ->
+      info =
+        try do
+          :erlang.system_info({:allocator, alloc})
+        rescue
+          _ -> nil
+        end
+
+      if is_list(info) do
+        {allocated, used, calls} =
+          Enum.reduce(info, {0, 0, 0}, fn {:instance, _nr, stats}, {al, us, ca} ->
+            allocated = Keyword.get(stats, :mbcs) |> get.(:carriers_size)
+            used = Keyword.get(stats, :mbcs) |> get.(:blocks_size)
+            calls = Keyword.get(stats, :calls) |> get_alloc.()
+            {allocated + al, used + us, calls + ca}
+          end)
+
+        waste = allocated - used
+
+        :io.format(
+          "~-12s got ~10s used of ~10s alloc (~4s) = ~10s waste @ ~10s calls~n",
+          [alloc, "#{used}", "#{allocated}", percent.(used, allocated), "#{waste}", "#{calls}"]
+        )
+      else
+        :io.format("~-12s is disabled~n", [alloc])
+      end
+    end)
   end
 
   @spec trace_all_calls(task(), non_neg_integer()) :: binary()
