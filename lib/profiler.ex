@@ -384,9 +384,11 @@ defmodule Profiler do
       _other -> polltracer(pid)
     after
       500 ->
-        {:current_stacktrace, what} = :erlang.process_info(pid, :current_stacktrace)
-        what = Enum.take(what, 3)
-        IO.puts("#{inspect(pid)}: #{inspect(what)}")
+        with {:current_stacktrace, what} <- :erlang.process_info(pid, :current_stacktrace) do
+          what = Enum.take(what, 3)
+          IO.puts("#{inspect(pid)}: #{inspect(what)}")
+        end
+
         polltracer(pid)
     end
   end
@@ -398,8 +400,12 @@ defmodule Profiler do
   def stacktrace(pid \\ nil, depth \\ 30) do
     :erlang.system_flag(:backtrace_depth, depth)
     pid = pid || self()
-    {:current_stacktrace, what} = :erlang.process_info(pid, :current_stacktrace)
-    what
+
+    with {:current_stacktrace, what} <- :erlang.process_info(pid, :current_stacktrace) do
+      what
+    else
+      _ -> []
+    end
   end
 
   @doc """
