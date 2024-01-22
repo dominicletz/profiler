@@ -399,7 +399,7 @@ defmodule Profiler do
   """
   def stacktrace(pid \\ nil, depth \\ 30) do
     :erlang.system_flag(:backtrace_depth, depth)
-    pid = pid || self()
+    pid = to_pid(pid) || self()
 
     with {:current_stacktrace, what} <- :erlang.process_info(pid, :current_stacktrace) do
       what
@@ -556,7 +556,7 @@ defmodule Profiler do
   end
 
   defp to_pid(pid) when is_atom(pid) do
-    :erlang.whereis(pid)
+    Process.whereis(pid)
   end
 
   defp to_pid(pid) when is_integer(pid) do
