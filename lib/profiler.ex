@@ -401,11 +401,21 @@ defmodule Profiler do
     :erlang.system_flag(:backtrace_depth, depth)
     pid = to_pid(pid) || self()
 
-    with {:current_stacktrace, what} <- :erlang.process_info(pid, :current_stacktrace) do
+    with {:current_stacktrace, [_ | what]} <- :erlang.process_info(pid, :current_stacktrace) do
       what
     else
       _ -> []
     end
+  end
+
+  def print_stacktrace(pid \\ nil, depth \\ 30) do
+    pid = to_pid(pid) || self()
+
+    case stacktrace(pid, depth) do
+      [_ | trace] -> "Stacktrace for #{inspect(pid)}\n" <> Exception.format_stacktrace(trace)
+      _ -> "No stacktrace for #{inspect(pid)}"
+    end
+    |> IO.puts()
   end
 
   @doc """
