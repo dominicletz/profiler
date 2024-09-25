@@ -426,11 +426,13 @@ defmodule Profiler do
   # ===========================                    ===========================
 
   def convert(prefix) do
+    source = String.to_charlist(prefix <> ".fprof")
     destination = prefix <> ".cprof"
     {:ok, file} = :file.open(String.to_charlist(destination), [:write])
-    {:ok, terms} = :file.consult(String.to_charlist(prefix <> ".fprof"))
+    {:ok, terms} = :file.consult(source)
     :io.format(file, "events: Time~n", [])
     process_terms(file, terms, [])
+    :file.delete(source)
 
     (System.find_executable("kcachegrind") || System.find_executable("qcachegrind"))
     |> case do
@@ -481,7 +483,7 @@ defmodule Profiler do
 
   defp process_actual(file, {func, _count, _acc, own}) do
     file_name = get_file(func)
-    :io.format(file, "fl=~w~n", [file_name])
+    :io.format(file, "fl=~s~n", [file_name])
     :io.format(file, "fn=~w~n", [func])
     :io.format(file, "1 ~w~n", [trunc(own * 1000)])
   end
@@ -497,18 +499,25 @@ defmodule Profiler do
 
   defp process_called(file, {func, count, acc, _own}) do
     file_name = get_file(func)
-    :io.format(file, "cfl=~w~n", [file_name])
+    :io.format(file, "cfl=~s~n", [file_name])
     :io.format(file, "cfn=~w~n", [func])
     :io.format(file, "calls=~w 1~n", [count])
     :io.format(file, "1 ~w~n", [trunc(acc * 1000)])
   end
 
   defp get_file({mod, _func, _arity}) do
-    mod
+    case Atom.to_string(mod) do
+      "Elixir." <> rest ->
+        name = Macro.underscore(rest)
+        String.to_charlist(Path.join(["lib", "#{name}.ex"]))
+
+      _ ->
+        ~c"src/#{mod}.erl"
+    end
   end
 
   defp get_file(_func) do
-    :pseudo
+    ~c"pseudo"
   end
 
   defp print(tree) do
