@@ -12,7 +12,7 @@ defmodule Profiler.MixProject do
       # Hex
       description: "Profiler is a sampling profiler library for live performance analysis.",
       package: [
-        licenses: ["Apache 2.0"],
+        licenses: ["Apache-2.0"],
         maintainers: ["Dominic Letz"],
         links: %{"GitHub" => "https://github.com/dominicletz/profiler"}
       ],
