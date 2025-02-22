@@ -28,6 +28,7 @@ defmodule Profiler do
                                   100% {Profiler, :"-profile/2-fun-0-", 3, [file: 'lib/profiler.ex', line: 121]}
   ```
   """
+  require Logger
 
   @type task :: String.t() | atom() | pid() | fun()
 
@@ -408,14 +409,75 @@ defmodule Profiler do
     end
   end
 
-  def print_stacktrace(pid \\ nil, depth \\ 30) do
+  def format_stacktrace(pid \\ nil, depth \\ 30) do
     pid = to_pid(pid) || self()
 
     case stacktrace(pid, depth) do
       [_ | trace] -> "Stacktrace for #{inspect(pid)}\n" <> Exception.format_stacktrace(trace)
       _ -> "No stacktrace for #{inspect(pid)}"
     end
-    |> IO.puts()
+  end
+
+  def print_stacktrace(pid \\ nil, depth \\ 30) do
+    IO.puts(format_stacktrace(pid, depth))
+  end
+
+  @doc """
+  In order to identify processes that are supposed to be short-lived but actually
+  take too mich time this function produces Logger.warning() with a stacktrace if
+  the provided process is still alive after the given timeout.
+
+  If the process is just running a certain critical section that should be monitored
+  the warning can be supressed using `cancel_warn_if_stuck()`
+
+
+
+  @pid Pid of the process to be monitored, or a function after which the warning will be autocancelled
+  @opts can be
+    - `timeout` -> Timeout in ms after which the warning will be produced. defaults to 5_000
+    - `label` -> Process label to be used in the report or just the `pid` will be used
+    - `fun` -> When provided this function replaces the default report via `Logger.warning`
+
+  """
+  def warn_if_stuck(pid, opts \\ [])
+
+  def warn_if_stuck(fun, opts) when is_function(fun) do
+    ref = warn_if_stuck(self(), opts)
+    ret = fun.()
+    cancel_warn_if_stuck(ref)
+    ret
+  end
+
+  def warn_if_stuck(pid, opts) do
+    pid = to_pid(pid) || self()
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    fun = Keyword.get(opts, :fun, nil)
+    label = Keyword.get(opts, :label, "Process #{inspect(pid)}")
+
+    spawn(fn ->
+      Process.monitor(pid)
+
+      receive do
+        {:DOWN, _ref, :process, _object, _reason} ->
+          :ok
+
+        :cancel ->
+          :ok
+      after
+        timeout ->
+          if fun do
+            fun.()
+          else
+            Logger.warning("#{label} stuck for #{timeout}\n" <> format_stacktrace(pid))
+          end
+      end
+    end)
+  end
+
+  def cancel_warn_if_stuck(pid) do
+    if pid != nil do
+      send(pid, :cancel)
+    end
   end
 
   @doc """
