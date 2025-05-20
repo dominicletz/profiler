@@ -81,20 +81,19 @@ defmodule Profiler do
       Enum.zip([pids, info1, info2])
       |> Enum.reject(fn {_pid, info1, info2} -> info1 == :undefined or info2 == :undefined end)
       |> Enum.map(fn {pid, info1, info2} ->
-        name =
-          if info2[:registered_name] == nil do
-            if info2[:dictionary] == nil or info2[:dictionary][:"$initial_call"] == nil do
-              info2[:initial_call]
-            else
-              info2[:dictionary][:"$initial_call"]
-            end
+        name = process_name(info2)
+
+        current_function =
+          if info1[:current_function] == info2[:current_function] do
+            info1[:current_function]
           else
-            info2[:registered_name]
+            {info1[:current_function], info2[:current_function]}
           end
 
         [
           {:pid, pid},
           {:reductionsd, info2[:reductions] - info1[:reductions]},
+          {:current_function, current_function},
           {:name, name}
           | info2
         ]
@@ -103,10 +102,58 @@ defmodule Profiler do
       |> Enum.take(10)
 
     for n <- info do
-      :io.format("~p~n", [[n[:pid], n[:name], n[:reductionsd]]])
+      :io.format("~p~n", [[n[:pid], n[:name], n[:reductionsd], n[:current_function]]])
     end
 
     :ok
+  end
+
+  @doc """
+    Processes lists all processes ordered by heap usage.
+  """
+  @spec processes_memory() :: :ok
+  def processes_memory() do
+    processes_by_key(:total_heap_size)
+  end
+
+  @doc """
+    Lists the processes by message queue length.
+  """
+  @spec processes_message_queue_len() :: :ok
+  def processes_message_queue_len() do
+    processes_by_key(:message_queue_len)
+  end
+
+  defp processes_by_key(key) do
+    pids = :erlang.processes()
+    info1 = Enum.map(pids, &:erlang.process_info/1)
+
+    info =
+      Enum.zip([pids, info1])
+      |> Enum.reject(fn {_pid, info1} -> info1 == :undefined end)
+      |> Enum.map(fn {pid, info1} ->
+        [{:pid, pid}, {:name, process_name(info1)} | info1]
+      end)
+      |> Enum.sort_by(& &1[key], :desc)
+      |> Enum.take(10)
+
+    for n <- info do
+      :io.format("~p~n", [[n[:pid], n[:name], n[key]]])
+    end
+
+    :ok
+  end
+
+  defp process_name(info) do
+    if info[:registered_name] == nil do
+      if info[:dictionary] == nil or info[:dictionary][:"$initial_call"] == nil do
+        info[:initial_call]
+      else
+        info[:dictionary][:"$initial_call"]
+      end
+    else
+      info[:registered_name]
+    end
   end
 
   @doc """
