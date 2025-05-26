@@ -765,7 +765,7 @@ defmodule Profiler do
   end
 
   defp to_pid(pid) when is_atom(pid) do
-    Process.whereis(pid)
+    Process.whereis(pid) || find_pid(pid, 10)
   end
 
   defp to_pid(pid) when is_integer(pid) do
@@ -795,6 +795,7 @@ defmodule Profiler do
         pid
 
       nil ->
+        Process.sleep(100)
         find_pid(needle, n - 1)
     end
   end
@@ -812,7 +813,7 @@ defmodule Profiler do
   end
 
   defp with_pid(pid, fun, _) do
-    fun.(to_pid(pid))
+    fun.(to_pid(pid) || raise("No such pid #{inspect(pid)}"))
   end
 
   defp looper(fun, msecs) do
