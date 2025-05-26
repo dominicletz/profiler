@@ -51,6 +51,81 @@ defmodule Profiler do
   end
 
   @doc """
+    Functions lists functions / stacktraces by the amount they are seen in the
+    given time schedule.
+  """
+  def functions(opts \\ []) do
+    step_size = Keyword.get(opts, :step_size, 100)
+    timeout = Keyword.get(opts, :timeout, 1_000)
+    limit = Keyword.get(opts, :limit, 10)
+
+    functions(collect_info(), limit, step_size, System.os_time(:millisecond) + timeout, [])
+    |> Enum.reduce(%{}, fn {_pid, reds, stacktrace}, map ->
+      # Map.update(map, stacktrace, {pid, reds}, fn {pid2, reds2} -> {max(pid, pid2), reds + reds2} end)
+      Map.update(map, stacktrace, reds, fn reds2 -> reds + reds2 end)
+    end)
+    |> Enum.sort_by(fn {_stacktrace, reds} -> reds end, :desc)
+    |> Enum.take(limit)
+    |> Enum.each(fn {stacktrace, reds} ->
+      IO.puts("#{reds} #{inspect(stacktrace)}")
+    end)
+  end
+
+  defp functions(prev, limit, step_size, end_time, acc) do
+    Process.sleep(step_size)
+    next = collect_info()
+
+    reds =
+      Enum.map(next, fn {pid, info} ->
+        {pid, info, info[:reductions] - (get_in(prev, [pid, :reductions]) || 0)}
+      end)
+
+    reds =
+      Enum.sort_by(reds, fn {_pid, _info, reds} -> reds end, :desc)
+      |> Enum.take(limit)
+      |> Enum.map(fn {pid, info, reds} ->
+        {pid, reds, process_name(info) || stacktrace(pid)}
+      end)
+
+    if System.os_time(:millisecond) > end_time do
+      acc
+    else
+      functions(next, limit, step_size, end_time, reds ++ acc)
+    end
+  end
+
+  defp process_name(info) do
+    name =
+      get_in(info, [:registered_name]) ||
+        get_in(info, [:dictionary, :"$process_label"]) ||
+        get_in(info, [:dictionary, :"$initial_call"]) ||
+        get_in(info, [:initial_call])
+
+    filter_pids(name)
+  end
+
+  defp filter_pids(tuple) when is_tuple(tuple) do
+    List.to_tuple(filter_pids(Tuple.to_list(tuple)))
+  end
+
+  defp filter_pids(list) when is_list(list) do
+    Enum.map(list, fn
+      pid when is_pid(pid) -> :pid
+      other -> filter_pids(other)
+    end)
+  end
+
+  defp filter_pids(other), do: other
+
+  defp collect_info() do
+    :erlang.processes()
+    |> Enum.reject(fn pid -> pid == self() end)
+    |> Enum.map(fn pid -> {pid, :erlang.process_info(pid)} end)
+    |> Enum.filter(fn {_pid, info} -> info != :undefined end)
+    |> Map.new()
+  end
+
+  @doc """
     Processes lists all processes ordered by reductions withing the given
     timeout. For that it takes an initial snapshot, sleeps the given timeout
     and takes a second snapshot.
@@ -160,18 +235,6 @@ defmodule Profiler do
     end
 
     :ok
-  end
-
-  defp process_name(info) do
-    if info[:registered_name] == nil do
-      if info[:dictionary] == nil or info[:dictionary][:"$initial_call"] == nil do
-        info[:initial_call]
-      else
-        info[:dictionary][:"$initial_call"]
-      end
-    else
-      info[:registered_name]
-    end
   end
 
   @doc """
@@ -709,8 +772,31 @@ defmodule Profiler do
     to_pid("<0.#{pid}.0>")
   end
 
+  defp to_pid(pid) when is_tuple(pid) do
+    find_pid(pid, 10)
+  end
+
   defp to_pid(pid) do
     pid
+  end
+
+  defp find_pid(_needle, 0), do: nil
+
+  defp find_pid(needle, n) do
+    IO.puts("to_pid '#{inspect(needle)}' looking for matching process... (#{n})")
+
+    collect_info()
+    |> Enum.sort_by(fn {_pid, info} -> info[:reductions] end, :asc)
+    |> Enum.find(fn {_pid, info} -> process_name(info) == needle end)
+    |> case do
+      {pid, info} ->
+        IO.puts("to_pid '#{inspect(pid)}' found #{inspect(pid)}")
+        IO.puts("info: #{inspect(info)}")
+        pid
+
+      nil ->
+        find_pid(needle, n - 1)
+    end
   end
 
   defp spawn_with_pid(pid, fun, msecs) do
