@@ -55,6 +55,12 @@ defmodule Profiler do
     timeout. For that it takes an initial snapshot, sleeps the given timeout
     and takes a second snapshot.
 
+    The following options are supported:
+
+    - :timeout - the timeout in milliseconds
+    - :limit - the limit of processes to list
+    - :stacktrace - the number of processes to print the stack trace for
+    - :profile - the number of processes to profile
     ```
     iex(1)> Profiler.processes
     [<0.187.0>,{'Elixir.IEx.Evaluator',init,4},1339]
@@ -70,8 +76,20 @@ defmodule Profiler do
     :ok
     ```
   """
-  @spec processes(non_neg_integer()) :: :ok
-  def processes(timeout \\ 5_000) do
+  @spec processes(non_neg_integer() | Keyword.t()) :: :ok
+  def processes(opts \\ []) do
+    opts =
+      if is_integer(opts) do
+        [timeout: opts]
+      else
+        opts
+      end
+
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    limit = Keyword.get(opts, :limit, 10)
+    stacktrace = Keyword.get(opts, :stacktrace, 0)
+    profile = Keyword.get(opts, :profile, 0)
+
     pids = :erlang.processes()
     info1 = Enum.map(pids, &:erlang.process_info/1)
     Process.sleep(timeout)
@@ -83,26 +101,26 @@ defmodule Profiler do
       |> Enum.map(fn {pid, info1, info2} ->
         name = process_name(info2)
 
-        current_function =
-          if info1[:current_function] == info2[:current_function] do
-            info1[:current_function]
-          else
-            {info1[:current_function], info2[:current_function]}
-          end
-
         [
           {:pid, pid},
           {:reductionsd, info2[:reductions] - info1[:reductions]},
-          {:current_function, current_function},
           {:name, name}
           | info2
         ]
       end)
       |> Enum.sort(&(&1[:reductionsd] > &2[:reductionsd]))
-      |> Enum.take(10)
+      |> Enum.take(limit)
 
     for n <- info do
-      :io.format("~p~n", [[n[:pid], n[:name], n[:reductionsd], n[:current_function]]])
+      :io.format("~p~n", [[n[:pid], n[:name], n[:reductionsd]]])
+    end
+
+    for n <- Enum.take(info, stacktrace) do
+      print_stacktrace(n[:pid])
+    end
+
+    for n <- Enum.take(info, profile) do
+      fprof(n[:pid], timeout)
     end
 
     :ok
