@@ -104,6 +104,7 @@ defmodule Profiler do
   :erst_code_purger
   iex(2)> Profiler.process_name(self())
   {IEx.Evaluator, :init, 5}
+  ```
   """
   def process_name(nil), do: nil
   def process_name(:undefined), do: nil
@@ -821,6 +822,7 @@ defmodule Profiler do
   iex(3)> Profiler.pid("Elixir.IEx.Evaluator")
   <0.187.0>
   iex(4)> Profiler.pid({:IEx.Evaluator, :init, 4})
+  ```
   """
   @spec pid(term()) :: pid()
   def pid(term) do
