@@ -51,8 +51,8 @@ defmodule Profiler do
   end
 
   @doc """
-    Functions lists functions / stacktraces by the amount they are seen in the
-    given time schedule.
+    Functions lists process names / stacktraces by the amount they are seen in the
+    given the timeout.
   """
   def functions(opts \\ []) do
     step_size = Keyword.get(opts, :step_size, 100)
@@ -94,7 +94,25 @@ defmodule Profiler do
     end
   end
 
-  defp process_name(info) do
+  @doc """
+  Identify the best human readable name for a process. Supports as
+  arguments all types supported by `pid/1`
+
+  Examples:
+  ```
+  iex(1)> Profiler.process_name(1)
+  :erst_code_purger
+  iex(2)> Profiler.process_name(self())
+  {IEx.Evaluator, :init, 5}
+  """
+  def process_name(nil), do: nil
+  def process_name(:undefined), do: nil
+
+  def process_name(pid) when is_pid(pid) do
+    Process.info(pid) |> process_name()
+  end
+
+  def process_name(info) when is_list(info) do
     name =
       get_in(info, [:registered_name]) ||
         get_in(info, [:dictionary, :"$process_label"]) ||
@@ -102,6 +120,10 @@ defmodule Profiler do
         get_in(info, [:initial_call])
 
     filter_pids(name)
+  end
+
+  def process_name(other) do
+    process_name(to_pid(other))
   end
 
   defp filter_pids(tuple) when is_tuple(tuple) do
@@ -780,23 +802,55 @@ defmodule Profiler do
     pid
   end
 
+  @doc """
+  Converts a term to a pid.
+  Accepts
+  - pid()
+  - integer()
+  - tuple()
+  - atom()
+  - binary()
+  - string()
+
+  Examples:
+  ```
+  iex(1)> Profiler.pid(1)
+  <0.1.0>
+  iex(2)> Profiler.pid("1")
+  <0.1.0>
+  iex(3)> Profiler.pid("Elixir.IEx.Evaluator")
+  <0.187.0>
+  iex(4)> Profiler.pid({:IEx.Evaluator, :init, 4})
+  """
+  @spec pid(term()) :: pid()
+  def pid(term) do
+    to_pid(term)
+  end
+
   defp find_pid(_needle, 0), do: nil
 
   defp find_pid(needle, n) do
     IO.puts("to_pid '#{inspect(needle)}' looking for matching process... (#{n})")
 
-    collect_info()
-    |> Enum.sort_by(fn {_pid, info} -> info[:reductions] end, :asc)
-    |> Enum.find(fn {_pid, info} -> process_name(info) == needle end)
-    |> case do
-      {pid, info} ->
+    :erlang.processes()
+    |> Enum.reject(fn pid -> pid == self() end)
+    |> Enum.shuffle()
+    |> Enum.find(fn pid ->
+      info = :erlang.process_info(pid)
+
+      if process_name(info) == needle do
         IO.puts("to_pid '#{inspect(pid)}' found #{inspect(pid)}")
         IO.puts("info: #{inspect(info)}")
         pid
-
+      end
+    end)
+    |> case do
       nil ->
         Process.sleep(100)
         find_pid(needle, n - 1)
+
+      pid ->
+        pid
     end
   end
 
