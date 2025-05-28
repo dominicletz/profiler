@@ -51,15 +51,15 @@ defmodule Profiler do
   end
 
   @doc """
-    Functions lists process names / stacktraces by the amount they are seen in the
+    hotspots lists process names / stacktraces by the amount they are seen in the
     given the timeout.
   """
-  def functions(opts \\ []) do
+  def hotspots(opts \\ []) do
     step_size = Keyword.get(opts, :step_size, 100)
     timeout = Keyword.get(opts, :timeout, 1_000)
     limit = Keyword.get(opts, :limit, 10)
 
-    functions(collect_info(), limit, step_size, System.os_time(:millisecond) + timeout, [])
+    hotspots(collect_info(), limit, step_size, System.os_time(:millisecond) + timeout, [])
     |> Enum.reduce(%{}, fn {_pid, reds, stacktrace}, map ->
       # Map.update(map, stacktrace, {pid, reds}, fn {pid2, reds2} -> {max(pid, pid2), reds + reds2} end)
       Map.update(map, stacktrace, reds, fn reds2 -> reds + reds2 end)
@@ -71,7 +71,7 @@ defmodule Profiler do
     end)
   end
 
-  defp functions(prev, limit, step_size, end_time, acc) do
+  defp hotspots(prev, limit, step_size, end_time, acc) do
     Process.sleep(step_size)
     next = collect_info()
 
@@ -90,7 +90,7 @@ defmodule Profiler do
     if System.os_time(:millisecond) > end_time do
       acc
     else
-      functions(next, limit, step_size, end_time, reds ++ acc)
+      hotspots(next, limit, step_size, end_time, reds ++ acc)
     end
   end
 
