@@ -51,7 +51,20 @@ defmodule Profiler do
   end
 
   @doc """
-    hotspots lists process names / stacktraces by the amount they are seen in the
+    print_hotspots lists process names / stacktraces by the amount they are seen in the
+    given the timeout.
+  """
+  def print_hotspots(opts \\ []) do
+    hotspots(opts)
+    |> Enum.each(fn {stacktrace, reds} ->
+      IO.puts("#{reds} #{inspect(stacktrace)}")
+    end)
+
+    :ok
+  end
+
+  @doc """
+    hotspots returns process names / stacktraces by the amount they are seen in the
     given the timeout.
   """
   def hotspots(opts \\ []) do
@@ -66,9 +79,6 @@ defmodule Profiler do
     end)
     |> Enum.sort_by(fn {_stacktrace, reds} -> reds end, :desc)
     |> Enum.take(limit)
-    |> Enum.each(fn {stacktrace, reds} ->
-      IO.puts("#{reds} #{inspect(stacktrace)}")
-    end)
   end
 
   defp hotspots(prev, limit, step_size, end_time, acc) do
