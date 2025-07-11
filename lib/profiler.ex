@@ -561,7 +561,7 @@ defmodule Profiler do
   """
   def stacktrace(pid \\ nil, depth \\ 30) do
     :erlang.system_flag(:backtrace_depth, depth)
-    pid = to_pid(pid) || self()
+    pid = to_pid(pid)
 
     with {:current_stacktrace, [_ | what]} <- :erlang.process_info(pid, :current_stacktrace) do
       what
@@ -571,7 +571,7 @@ defmodule Profiler do
   end
 
   def format_stacktrace(pid \\ nil, depth \\ 30) do
-    pid = to_pid(pid) || self()
+    pid = to_pid(pid)
 
     case stacktrace(pid, depth) do
       [_ | trace] -> "Stacktrace for #{inspect(pid)}\n" <> Exception.format_stacktrace(trace)
@@ -610,7 +610,7 @@ defmodule Profiler do
   end
 
   def warn_if_stuck(pid, opts) do
-    pid = to_pid(pid) || self()
+    pid = to_pid(pid)
     timeout = Keyword.get(opts, :timeout, 5_000)
     fun = Keyword.get(opts, :fun, nil)
     label = Keyword.get(opts, :label, "Process #{inspect(pid)}")
@@ -796,6 +796,8 @@ defmodule Profiler do
     |> :erlang.binary_to_list()
     |> :erlang.list_to_pid()
   end
+
+  defp to_pid(nil), do: self()
 
   defp to_pid(pid) when is_atom(pid) do
     Process.whereis(pid) || find_pid(pid, 10)
