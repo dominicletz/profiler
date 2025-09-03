@@ -150,12 +150,20 @@ defmodule Profiler do
 
   defp filter_pids(other), do: other
 
-  defp collect_info() do
+  def collect_info() do
     :erlang.processes()
     |> Enum.reject(fn pid -> pid == self() end)
     |> Enum.map(fn pid -> {pid, :erlang.process_info(pid)} end)
     |> Enum.filter(fn {_pid, info} -> info != :undefined end)
     |> Map.new()
+  end
+
+  def collect_active_info() do
+    collect_info()
+    |> Enum.filter(fn {_pid, info} -> info[:status] == :running end)
+    |> Enum.map(fn {pid, info} ->
+      {pid, Keyword.delete(info, :dictionary) |> Keyword.delete(:garbage_collection)}
+    end)
   end
 
   @doc """
