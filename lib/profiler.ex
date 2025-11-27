@@ -811,6 +811,13 @@ defmodule Profiler do
     Process.whereis(pid) || find_pid(pid, 10)
   end
 
+  defp to_pid({:global, name}) do
+    case :global.whereis_name(name) do
+      :undefined -> nil
+      pid -> pid
+    end
+  end
+
   defp to_pid(pid) when is_integer(pid) do
     to_pid("<0.#{pid}.0>")
   end
