@@ -98,7 +98,7 @@ defmodule Profiler do
       end)
 
     if System.os_time(:millisecond) > end_time do
-      acc
+      reds ++ acc
     else
       hotspots(next, limit, step_size, end_time, reds ++ acc)
     end
